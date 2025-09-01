@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fest Results Portal</title>
+    
+    <!-- Tailwind CSS for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts: Inter for a clean UI -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Custom styles and animations */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5;
+        }
+        .page { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        /* Loader Style */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .admin-tab.active { border-color: #4f46e5; color: #4f46e5; background-color: #eef2ff; }
+        .category-filter-btn.active { background-color: #4f46e5; color: white; }
+        #mobile-nav-container {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        #mobile-nav-container.open {
+            max-height: 500px; /* Adjust as needed */
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <!-- Main Application Container -->
+    <div id="app" class="min-h-screen">
+        <div class="flex items-center justify-center min-h-screen"><div class="loader"></div></div>
+    </div>
+
+    <!-- Firebase SDKs (Version 8.10.0) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+    <!-- Main Application Logic -->
+    <script type="module">
+        // --- FIREBASE CONFIGURATION ---
+        // IMPORTANT: Replace with your actual Firebase project configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBXJ_RnfjUDi7qPDATWVnS5lSFw6jVRYgo",
+  authDomain: "shopping-e284c.firebaseapp.com",
+  databaseURL: "https://shopping-e284c-default-rtdb.firebaseio.com",
+  projectId: "shopping-e284c",
+  storageBucket: "shopping-e284c.appspot.com",
+  messagingSenderId: "248274428739",
+  appId: "1:248274428739:web:fc30dd9eb1ef83f610c5f6",
+  measurementId: "G-ZXZCK9BW7T"
+        };
+
+        // --- CONSTANTS ---
+        const CATEGORIES = ["Bidaya", "Uoola", "Thaniya", "Thanawiyya", "Aliya", "Kulliyya"];
+
+        // --- INITIALIZE FIREBASE ---
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const auth = firebase.auth();
+
+        // --- APPLICATION STATE ---
+        let currentUser = null;
+        let appData = { teams: {}, students: {}, programs: {}, results: {}, pointsConfig: {} };
+        let isInitialLoad = true;
+        let tempParticipants = []; // For the new admin results form
+
+        // --- UI COMPONENTS & TEMPLATES ---
+        const AppShell = (content) => `
+            <div class="min-h-screen bg-gray-100 flex flex-col">
+                <nav class="bg-white shadow-md sticky top-0 z-50">
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                        <div class="flex items-center justify-between h-16">
+                            <a href="#/" class="font-bold text-xl text-indigo-600"><i class="fas fa-trophy mr-2"></i>Fest Results</a>
+                            <div class="hidden md:block">
+                                <div id="desktop-nav" class="ml-10 flex items-baseline space-x-4">
+                                    ${generateNavLinks()}
+                                </div>
+                            </div>
+                            <div class="md:hidden">
+                                <button id="mobile-menu-btn" class="text-gray-600 hover:text-indigo-600 p-2 rounded-md">
+                                    <i class="fas fa-bars text-xl"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="mobile-nav-container" class="md:hidden bg-white border-t border-gray-200">
+                        <!-- Mobile nav content is injected here -->
+                    </div>
+                </nav>
+                <main id="main-content" class="py-10 flex-grow" style="padding: 30px 50px;">
+                    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-6">
+                        ${content}
+                    </div>
+                </main>
+                        <p style="text-align:center; color: gray; margin-bottom: 10px; font-size: 14px;">© Copyright Owned Nazim Cp</p>
+                       
+            </div>
+        `;
+
+        const generateNavLinks = (isMobile = false) => {
+            const baseClasses = isMobile ? "block px-4 py-3 text-base font-medium" : "px-3 py-2 rounded-md text-sm font-medium";
+            const links = `
+                <a href="#/" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Home</a>
+                <a href="#/results" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Results</a>
+                <a href="#/leaderboard" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Leaderboard</a>
+            `;
+            const authLinks = currentUser ? 
+                `<a href="#/admin" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Admin</a>
+                 <button id="logout-btn" class="${isMobile ? 'w-full text-left ' : ''} bg-red-500 text-white ${baseClasses}">Logout</button>` :
+                `<a href="#/admin" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Admin Login</a>`;
+            return links + authLinks;
+        };
+        
+        const renderLoader = () => `<div class="flex justify-center items-center p-16"><div class="loader"></div></div>`;
+        const categoryOptions = () => `<option value="">Select Category</option>` + CATEGORIES.map(c => `<option value="${c}">${c}</option>`).join('');
+        
+        // --- DATA HANDLING ---
+        function syncData() {
+            db.ref().on('value', snapshot => {
+                const data = snapshot.val() || {};
+                appData = {
+                    teams: data.teams || {},
+                    students: data.students || {},
+                    programs: data.programs || {},
+                    results: data.results || {},
+                    pointsConfig: data.pointsConfig || { first: 5, second: 3, third: 2, a_grade: 1, b_grade: 0 }
+                };
+                if (isInitialLoad) {
+                    router(); 
+                    isInitialLoad = false;
+                } else {
+                    router(true);
+                }
+            }, error => {
+                console.error("Firebase Read Failed:", error);
+                document.getElementById('app').innerHTML = `<div class="p-4 text-red-500">Error connecting to the database. Please check your Firebase configuration and security rules.</div>`;
+            });
+        }
+
+        function getDataAsArray(entity) {
+            if (!appData[entity]) return [];
+            return Object.entries(appData[entity]).map(([id, value]) => ({ id, ...value }));
+        }
+
+        // --- ROUTER & PAGE RENDERING ---
+        async function router(isUpdate = false) {
+            const path = window.location.hash.slice(1) || '/';
+            const appContainer = document.getElementById('app');
+            
+            if (!isUpdate) {
+                 appContainer.innerHTML = AppShell(renderLoader());
+            } else {
+                 const desktopNav = document.getElementById('desktop-nav');
+                 if(desktopNav) desktopNav.innerHTML = generateNavLinks();
+            }
+
+            const mainContent = appContainer.querySelector('#main-content');
+            if (!mainContent) return;
+
+            const currentPath = window.location.hash.slice(1) || '/';
+            document.querySelectorAll('.nav-link').forEach(link => {
+                const linkPath = link.getAttribute('href').slice(1);
+                const isActive = (currentPath === linkPath) || (currentPath === '' && linkPath === '/');
+                link.classList.toggle('bg-indigo-600', isActive);
+                link.classList.toggle('text-white', isActive);
+                link.classList.toggle('text-gray-600', !isActive);
+            });
+            
+            let pageFunction;
+            if (path.startsWith('/student/')) {
+                const studentId = path.split('/')[2];
+                pageFunction = () => renderStudentPage(studentId);
+            } else {
+                const routes = {
+                    '/': renderHomePage,
+                    '/results': renderResultsPage,
+                    '/leaderboard': renderLeaderboardPage,
+                    '/admin': renderAdminPage,
+                };
+                pageFunction = routes[path] || renderNotFoundPage;
+            }
+
+            mainContent.innerHTML = await pageFunction();
+            attachPageEventListeners(path);
+        }
+
+        function attachPageEventListeners(path){
+            if (path.startsWith('/admin')) {
+                document.getElementById('admin-tabs')?.addEventListener('click', e => {
+                    if (e.target.matches('.admin-tab')) renderAdminTab(e.target.dataset.tab);
+                });
+                const adminContent = document.getElementById('admin-tab-content');
+                adminContent?.addEventListener('submit', handleAdminFormSubmit);
+                adminContent?.addEventListener('change', handleAdminFormChange);
+                adminContent?.addEventListener('click', handleAdminListClick);
+                adminContent?.addEventListener('click', e => { // Listener for new admin results form
+                    if (e.target.id === 'add-participant-btn') addParticipantToTempList();
+                    if (e.target.matches('.remove-participant-btn')) removeParticipantFromTempList(e.target.dataset.index);
+                });
+            }
+            if (path === '/results'){
+                document.getElementById('results-search-form')?.addEventListener('submit', e => {
+                    e.preventDefault();
+                    const searchInput = document.getElementById('results-search-input');
+                    const mainContent = document.getElementById('main-content');
+                    renderResultsPage(searchInput.value).then(html => mainContent.innerHTML = html);
+                });
+            }
+            if (path === '/leaderboard'){
+                 document.getElementById('leaderboard-filter-container')?.addEventListener('click', e => {
+                    if(e.target.classList.contains('category-filter-btn')){
+                         const mainContent = document.getElementById('main-content');
+                         renderLeaderboardPage(e.target.dataset.category).then(html => mainContent.innerHTML = html);
+                    }
+                 });
+            }
+        }
+        
+        async function renderHomePage() {
+             const teamsArray = getDataAsArray('teams');
+             
+             teamsArray.forEach(team => {
+                 team.totalPoints = 0;
+                 team.categoryPoints = {};
+                 CATEGORIES.forEach(c => team.categoryPoints[c] = 0);
+             });
+
+             Object.values(appData.students || {}).forEach(student => {
+                 const team = teamsArray.find(t => t.id === student.teamId);
+                 if (team) {
+                     const points = student.totalPoints || 0;
+                     team.totalPoints += points;
+                     if(student.category && team.categoryPoints.hasOwnProperty(student.category)){
+                        team.categoryPoints[student.category] += points;
+                     }
+                 }
+             });
+
+             teamsArray.sort((a,b) => b.totalPoints - a.totalPoints);
+            
+             return `
+                <div class="page space-y-12">
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-900 mb-6">Team Standings</h1>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            ${teamsArray.length === 0 ? `<p class="text-gray-500 col-span-full">No teams data yet.</p>` :
+                                teamsArray.map((team, index) => {
+                                    const colors = ['text-yellow-400', 'text-gray-400', 'text-yellow-600', 'text-blue-400'];
+                                    const icons = ['fa-crown', 'fa-medal', 'fa-award', 'fa-star'];
+                                    return `
+                                    <div class="bg-white shadow-lg rounded-xl p-6 transform hover:scale-105 transition-transform duration-300">
+                                        <div class="flex items-center justify-between">
+                                            <h2 class="text-xl font-bold text-gray-800">${team.name}</h2>
+                                            ${index < 4 ? `<i class="fas ${icons[index]} text-2xl ${colors[index]}"></i>` : ''}
+                                        </div>
+                                        <p class="text-5xl font-extrabold text-indigo-600 mt-4">${team.totalPoints}</p>
+                                        <p class="text-gray-500 mt-1">Total Points</p>
+                                    </div>`;
+                                }).join('')
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-900 mb-6">Category-wise Scores</h2>
+                        <div class="bg-white shadow-lg rounded-xl overflow-x-auto">
+                           <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
+                                        ${CATEGORIES.map(c => `<th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">${c}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    ${teamsArray.map(team => `
+                                        <tr>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${team.name}</td>
+                                            ${CATEGORIES.map(c => `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">${team.categoryPoints[c] || 0}</td>`).join('')}
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                           </table>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        async function renderResultsPage(searchTerm = '') {
+             const results = getDataAsArray('results').sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+             const filteredResults = results.filter(r => 
+                (r.programName || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+                (r.category || '').toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            const positionInfo = {
+                first: { label: '1st Place', icon: 'fa-trophy', color: 'text-yellow-500' },
+                second: { label: '2nd Place', icon: 'fa-medal', color: 'text-gray-500' },
+                third: { label: '3rd Place', icon: 'fa-award', color: 'text-yellow-700' }
+            };
+
+            return `
+                <div class="page">
+                    <h1 class="text-3xl font-bold text-gray-900 mb-6">Competition Results</h1>
+                    <div class="mb-8">
+                        <form id="results-search-form" class="flex gap-2">
+                            <input id="results-search-input" type="text" placeholder="Search by program or category..." value="${searchTerm}"
+                                class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                            <button type="submit" class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Search</button>
+                        </form>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${filteredResults.length === 0 ? `<p class="text-gray-500 text-center py-8 col-span-full">No results found.</p>` :
+                            filteredResults.map(result => {
+                                const positions = { first: [], second: [], third: [] };
+                                const grades = { a_grade: [], b_grade: [] };
+                                (result.participants || []).forEach(p => {
+                                    if(p.position && positions[p.position]) positions[p.position].push(p);
+                                    if(p.grade && grades[p.grade]) {
+                                        if(!p.position || p.position === 'none') grades[p.grade].push(p);
+                                    }
+                                });
+
+                                return `
+                                <div class="bg-white shadow-lg rounded-xl p-6 flex flex-col">
+                                    <div class="border-b pb-4 mb-4 border-gray-200">
+                                        <p class="text-xs font-semibold uppercase text-indigo-600">${result.category}</p>
+                                        <h2 class="text-xl font-bold text-gray-800 mt-1">${result.programName}</h2>
+                                        <p class="text-sm text-gray-400 mt-2">${new Date(result.timestamp).toLocaleDateString()}</p>
+                                    </div>
+                                    <div class="space-y-4 flex-grow">
+                                        ${Object.entries(positions).map(([pos, participants]) => participants.length > 0 ? `
+                                            <div>
+                                                <h3 class="font-bold text-md mb-2 ${positionInfo[pos].color}"><i class="fas ${positionInfo[pos].icon} mr-2"></i>${positionInfo[pos].label}</h3>
+                                                <ul class="space-y-1 pl-2">
+                                                ${participants.map(p => {
+                                                    const student = appData.students[p.studentId];
+                                                    const teamName = student && appData.teams[student.teamId] ? appData.teams[student.teamId].name : '';
+                                                    return `
+                                                    <li class="text-sm">
+                                                        <a href="#/student/${p.studentId}" class="text-gray-700 hover:text-indigo-600 hover:underline">${p.name}</a>
+                                                        ${teamName ? `<span class="text-gray-500 text-xs ml-1">(${teamName})</span>` : ''}
+                                                        ${p.grade && p.grade !== 'none' ? `<span class="ml-2 text-xs font-semibold text-white bg-green-500 px-2 py-1 rounded-full">${p.grade.replace('_', ' ')}</span>` : ''}
+                                                    </li>
+                                                `}).join('')}
+                                                </ul>
+                                            </div>
+                                        ` : '').join('')}
+
+                                        ${(grades.a_grade.length > 0 || grades.b_grade.length > 0) ? `
+                                            <div>
+                                                <h3 class="font-bold text-md mb-2 text-gray-600"><i class="fas fa-graduation-cap mr-2"></i>Grade Winners</h3>
+                                                <ul class="space-y-1 pl-2">
+                                                    ${grades.a_grade.map(p => {
+                                                        const student = appData.students[p.studentId];
+                                                        const teamName = student && appData.teams[student.teamId] ? appData.teams[student.teamId].name : '';
+                                                        return `<li class="text-sm"><a href="#/student/${p.studentId}" class="text-gray-700 hover:text-indigo-600 hover:underline">${p.name}</a> ${teamName ? `<span class="text-gray-500 text-xs ml-1">(${teamName})</span>` : ''} <span class="ml-2 text-xs font-semibold text-white bg-green-500 px-2 py-1 rounded-full">A Grade</span></li>`
+                                                    }).join('')}
+                                                    ${grades.b_grade.map(p => {
+                                                        const student = appData.students[p.studentId];
+                                                        const teamName = student && appData.teams[student.teamId] ? appData.teams[student.teamId].name : '';
+                                                        return `<li class="text-sm"><a href="#/student/${p.studentId}" class="text-gray-700 hover:text-indigo-600 hover:underline">${p.name}</a> ${teamName ? `<span class="text-gray-500 text-xs ml-1">(${teamName})</span>` : ''} <span class="ml-2 text-xs font-semibold text-white bg-blue-500 px-2 py-1 rounded-full">B Grade</span></li>`
+                                                    }).join('')}
+                                                </ul>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                                `
+                            }).join('')
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        async function renderLeaderboardPage(activeCategory = 'All') {
+            const studentsArray = getDataAsArray('students');
+            const filteredStudents = activeCategory === 'All'
+                ? studentsArray
+                : studentsArray.filter(s => s.category === activeCategory);
+
+            filteredStudents.sort((a,b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+
+            return `
+                <div class="page">
+                    <h1 class="text-3xl font-bold text-gray-900 mb-6">Top Scorers</h1>
+                    <div id="leaderboard-filter-container" class="mb-6 flex flex-wrap gap-2">
+                        <button data-category="All" class="category-filter-btn px-4 py-2 text-sm font-medium rounded-full transition-colors ${activeCategory === 'All' ? 'active' : 'bg-white text-gray-700'}">All</button>
+                        ${CATEGORIES.map(c => `
+                            <button data-category="${c}" class="category-filter-btn px-4 py-2 text-sm font-medium rounded-full transition-colors ${activeCategory === c ? 'active' : 'bg-white text-gray-700'}">${c}</button>
+                        `).join('')}
+                    </div>
+                    <div class="bg-white shadow-lg rounded-xl overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                 <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
+                                        ${activeCategory === 'All' ? `<th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>` : ''}
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    ${filteredStudents.slice(0, 100).map((student, index) => `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${index + 1}</td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600"><a href="#/student/${student.id}" class="hover:underline">${student.name}</a></td>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${appData.teams[student.teamId]?.name || 'N/A'}</td>
+                                            ${activeCategory === 'All' ? `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${student.category}</td>` : ''}
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">${student.totalPoints || 0}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        async function renderStudentPage(studentId) {
+             const student = appData.students[studentId];
+             if (!student) return `<p>Student not found.</p>`;
+
+             const teamName = appData.teams[student.teamId]?.name || 'N/A';
+             const results = getDataAsArray('results');
+             const achievements = [];
+
+             const prizeLabels = { first: '1st Place', second: '2nd Place', third: '3rd Place', a_grade: 'A Grade', b_grade: 'B Grade' };
+
+             results.forEach(result => {
+                (result.participants || []).forEach(p => {
+                    if(p.studentId === studentId) {
+                        let achievementText = '';
+                        let totalPoints = 0;
+                        if(p.position && p.position !== 'none') {
+                            achievementText += prizeLabels[p.position];
+                            totalPoints += appData.pointsConfig[p.position] || 0;
+                        }
+                        if(p.grade && p.grade !== 'none') {
+                            if(achievementText) achievementText += ' • ';
+                            achievementText += prizeLabels[p.grade];
+                            totalPoints += appData.pointsConfig[p.grade] || 0;
+                        }
+
+                        achievements.push({
+                             programName: result.programName,
+                             category: result.category,
+                             prize: achievementText,
+                             points: totalPoints
+                         });
+                    }
+                });
+             });
+
+             return `
+                <div class="page bg-white shadow-lg rounded-xl p-6 sm:p-8">
+                    <div class="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 mb-8">
+                        <div class="bg-indigo-500 text-white w-20 h-20 rounded-full flex items-center justify-center text-4xl font-bold flex-shrink-0">
+                            ${student.name.charAt(0)}
+                        </div>
+                        <div class="text-center sm:text-left">
+                            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">${student.name}</h1>
+                            <p class="text-lg sm:text-xl text-gray-600">${teamName} Team • ${student.category}</p>
+                        </div>
+                        <div class="sm:ml-auto text-center sm:text-right pt-4 sm:pt-0">
+                            <p class="text-base text-gray-500">Total Points</p>
+                            <p class="text-5xl sm:text-6xl font-extrabold text-indigo-600">${student.totalPoints || 0}</p>
+                        </div>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800 mt-10 mb-4">Achievements</h2>
+                    <div class="space-y-4">
+                        ${achievements.length === 0 ? `<p class="text-gray-500">No achievements recorded yet.</p>` :
+                            achievements.map(ach => `
+                                <div class="bg-gray-50 rounded-lg p-4 flex items-center justify-between">
+                                    <div>
+                                        <p class="font-semibold text-lg text-gray-800">${ach.programName}</p>
+                                        <p class="text-sm text-gray-500">${ach.category}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-bold text-lg text-indigo-600">${ach.prize}</p>
+                                        <p class="text-gray-600 font-medium">+${ach.points} Points</p>
+                                    </div>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        async function renderAdminPage() {
+            if (!currentUser) return renderAdminLoginPage();
+            return renderAdminDashboard();
+        }
+        
+        async function renderAdminLoginPage() {
+             return `
+                <div class="page flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+                    <div class="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-lg">
+                        <div><h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">Admin Portal Login</h2></div>
+                        <form id="login-form" class="mt-8 space-y-6">
+                            <div class="rounded-md shadow-sm -space-y-px">
+                                <div><input id="email" name="email" type="email" autocomplete="email" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="Email address"></div>
+                                <div><input id="password" name="password" type="password" autocomplete="current-password" required class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="Password"></div>
+                            </div>
+                            <div><button type="submit" class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Sign in</button></div>
+                            <p id="login-error" class="text-red-500 text-sm mt-2 text-center"></p>
+                        </form>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function renderAdminDashboard() {
+            setTimeout(() => renderAdminTab('results'), 0); // Load initial tab
+            return `
+                 <div class="page space-y-8">
+                    <h1 class="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+                    <div class="border-b border-gray-200">
+                        <nav id="admin-tabs" class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
+                            <button data-tab="results" class="admin-tab active whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Results</button>
+                            <button data-tab="students" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Students</button>
+                            <button data-tab="teams" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Teams</button>
+                            <button data-tab="programs" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Programs</button>
+                             <button data-tab="points" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Points Config</button>
+                        </nav>
+                    </div>
+                    <div id="admin-tab-content" class="pt-4">
+                        ${renderLoader()}
+                    </div>
+                </div>
+            `;
+        }
+        
+        async function renderAdminTab(tabName) {
+            const container = document.getElementById('admin-tab-content');
+            if (!container) return;
+            container.innerHTML = renderLoader();
+
+            document.querySelectorAll('.admin-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.tab === tabName);
+            });
+            
+            let content = '';
+            const teams = getDataAsArray('teams');
+            
+            switch(tabName) {
+                case 'results':
+                    tempParticipants = []; // Reset on tab load
+                    content = `
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg">
+                                <form id="add-result-form">
+                                <h2 class="text-2xl font-bold mb-6">Add New Result</h2>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label for="res-category" class="block text-sm font-medium text-gray-700">Category</label>
+                                        <select id="res-category" name="category" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">${categoryOptions()}</select>
+                                    </div>
+                                     <div>
+                                        <label for="res-program" class="block text-sm font-medium text-gray-700">Program</label>
+                                        <select id="res-program" name="program" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm" disabled><option>Select Category First</option></select>
+                                    </div>
+                                    <hr/>
+                                    <div class="bg-gray-50 p-4 rounded-lg">
+                                        <h3 class="text-lg font-semibold mb-2">Add Participants</h3>
+                                        <div class="flex items-center gap-2">
+                                            <select id="res-student-select" class="flex-grow block w-full p-2 border-gray-300 rounded-md shadow-sm" disabled><option>Select Program First</option></select>
+                                            <button type="button" id="add-participant-btn" class="bg-green-500 text-white px-3 py-2 rounded-md font-semibold text-sm hover:bg-green-600" disabled>+</button>
+                                        </div>
+                                    </div>
+                                    <div id="participants-list" class="space-y-2"></div>
+                                    <button type="submit" class="w-full justify-center py-2 px-6 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Submit Result</button>
+                                    <p id="form-message" class="text-sm mt-2 text-center"></p>
+                                </div>
+                                </form>
+                            </div>
+                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg">
+                                <h2 class="text-2xl font-bold mb-6">Recent Results</h2>
+                                <div id="recent-results-list" class="space-y-4 max-h-[80vh] overflow-y-auto pr-2"></div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'students':
+                    content = `
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg">
+                                <h2 class="text-2xl font-bold mb-6">Add New Student</h2>
+                                <form id="add-student-form" class="space-y-4">
+                                    <div><label for="student-name" class="block text-sm font-medium">Student Name</label><input type="text" id="student-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
+                                    <div><label for="student-category" class="block text-sm font-medium">Category</label><select id="student-category" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">${categoryOptions()}</select></div>
+                                    <div><label for="student-team" class="block text-sm font-medium">Team</label><select id="student-team" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"><option value="">Select Team</option>${teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select></div>
+                                    <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Student</button>
+                                    <p id="form-message" class="text-sm mt-2 text-center"></p>
+                                </form>
+                            </div>
+                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg"><h2 class="text-2xl font-bold mb-6">All Students</h2><div id="items-list" class="space-y-2 max-h-[80vh] overflow-y-auto pr-2"></div></div>
+                        </div>`;
+                    break;
+                 case 'teams':
+                    content = `
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg">
+                                <h2 class="text-2xl font-bold mb-6">Add New Team</h2>
+                                <form id="add-team-form" class="space-y-4">
+                                    <div><label for="team-name" class="block text-sm font-medium">Team Name</label><input type="text" id="team-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
+                                    <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Team</button>
+                                    <p id="form-message" class="text-sm mt-2 text-center"></p>
+                                </form>
+                            </div>
+                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg"><h2 class="text-2xl font-bold mb-6">All Teams</h2><div id="items-list" class="space-y-2 max-h-[80vh] overflow-y-auto pr-2"></div></div>
+                        </div>`;
+                    break;
+                case 'programs':
+                     content = `
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg">
+                                <h2 class="text-2xl font-bold mb-6">Add New Program</h2>
+                                <form id="add-program-form" class="space-y-4">
+                                    <div><label for="program-name" class="block text-sm font-medium">Program Name</label><input type="text" id="program-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
+                                    <div><label for="program-category" class="block text-sm font-medium">Category</label><select id="program-category" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">${categoryOptions()}</select></div>
+                                    <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Program</button>
+                                    <p id="form-message" class="text-sm mt-2 text-center"></p>
+                                </form>
+                            </div>
+                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg"><h2 class="text-2xl font-bold mb-6">All Programs</h2><div id="items-list" class="space-y-2 max-h-[80vh] overflow-y-auto pr-2"></div></div>
+                        </div>`;
+                    break;
+                 case 'points':
+                    content = `
+                        <div class="max-w-lg mx-auto bg-white p-6 rounded-xl shadow-lg">
+                            <h2 class="text-2xl font-bold mb-6">Points Configuration</h2>
+                            <form id="update-points-form" class="space-y-4">
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div><label for="points-first" class="block text-sm font-medium">1st Place</label><input type="number" id="points-first" value="${appData.pointsConfig.first}" required class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                                    <div><label for="points-second" class="block text-sm font-medium">2nd Place</label><input type="number" id="points-second" value="${appData.pointsConfig.second}" required class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                                    <div><label for="points-third" class="block text-sm font-medium">3rd Place</label><input type="number" id="points-third" value="${appData.pointsConfig.third}" required class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                                    <div><label for="points-a_grade" class="block text-sm font-medium">A Grade</label><input type="number" id="points-a_grade" value="${appData.pointsConfig.a_grade}" required class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                                    <div><label for="points-b_grade" class="block text-sm font-medium">B Grade</label><input type="number" id="points-b_grade" value="${appData.pointsConfig.b_grade}" required class="mt-1 w-full p-2 border-gray-300 rounded-md"></div>
+                                </div>
+                                <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Save Changes</button>
+                                <p id="form-message" class="text-sm mt-2 text-center"></p>
+                            </form>
+                        </div>`;
+                    break;
+            }
+
+            container.innerHTML = content;
+            
+            if (tabName === 'results') loadRecentResults();
+            if (['students', 'teams', 'programs'].includes(tabName)) loadItemsList(tabName);
+        }
+
+        function loadRecentResults() {
+            const container = document.getElementById('recent-results-list');
+            if(!container) return;
+            const results = getDataAsArray('results').sort((a,b) => b.timestamp - a.timestamp);
+            if(results.length === 0) {
+                container.innerHTML = `<p class="text-gray-500 text-center py-4">No results have been added yet.</p>`;
+                return;
+            }
+            container.innerHTML = results.map(r => `
+                <div class="border rounded-lg p-4 bg-gray-50">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="font-bold text-gray-800">${r.programName}</p>
+                            <p class="text-sm text-gray-500">${r.category}</p>
+                        </div>
+                        <button class="delete-btn text-red-500 hover:text-red-700" data-id="${r.id}" data-collection="results"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function loadItemsList(collectionName) {
+            const container = document.getElementById('items-list');
+            if(!container) return;
+            const items = getDataAsArray(collectionName);
+            if(items.length === 0) {
+                 container.innerHTML = `<p class="text-gray-500 text-center py-4">No ${collectionName} have been added yet.</p>`;
+                 return;
+            }
+            container.innerHTML = items.map(item => `
+                <div class="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                    <div>
+                        <p class="font-medium text-gray-800">${item.name}</p>
+                        ${item.category ? `<p class="text-sm text-gray-500">${item.category} ${item.teamId ? `• ${appData.teams[item.teamId]?.name}` : ''}</p>` : ''}
+                    </div>
+                    <button class="delete-btn text-red-500 hover:text-red-700" data-id="${item.id}" data-collection="${collectionName}"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('');
+        }
+
+        async function handleAdminFormChange(e) {
+            if(e.target.id === 'res-category' || e.target.id === 'res-program') {
+                const category = document.getElementById('res-category').value;
+                const programSelect = document.getElementById('res-program');
+                const studentSelect = document.getElementById('res-student-select');
+                const addBtn = document.getElementById('add-participant-btn');
+
+                // Populate programs
+                if(e.target.id === 'res-category') {
+                    if(!category) {
+                        programSelect.innerHTML = '<option>Select Category First</option>';
+                        programSelect.disabled = true;
+                    } else {
+                        const filteredPrograms = getDataAsArray('programs').filter(p => p.category === category);
+                        programSelect.innerHTML = `<option value="">Select Program</option>` + filteredPrograms.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+                        programSelect.disabled = false;
+                    }
+                }
+
+                // Populate students
+                if (category && programSelect.value) {
+                    const filteredStudents = getDataAsArray('students').filter(s => s.category === category);
+                    studentSelect.innerHTML = `<option value="">Select Student</option>` + filteredStudents.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+                    studentSelect.disabled = false;
+                    addBtn.disabled = false;
+                } else {
+                    studentSelect.innerHTML = '<option>Select Program First</option>';
+                    studentSelect.disabled = true;
+                    addBtn.disabled = true;
+                }
+            }
+        }
+        
+        async function handleAdminFormSubmit(e) {
+            e.preventDefault();
+            const form = e.target;
+            const messageEl = form.querySelector('#form-message');
+            if (messageEl) messageEl.textContent = '';
+            
+            const activeTabEl = document.querySelector('.admin-tab.active');
+            const activeTabName = activeTabEl ? activeTabEl.dataset.tab : null;
+
+            try {
+                switch(form.id) {
+                    case 'add-team-form':
+                        await db.ref('teams').push({ name: form.querySelector('#team-name').value, createdAt: Date.now() });
+                        if (messageEl) messageEl.textContent = 'Team added successfully!';
+                        form.reset();
+                        break;
+                    case 'add-student-form':
+                        await db.ref('students').push({
+                            name: form.querySelector('#student-name').value,
+                            category: form.querySelector('#student-category').value,
+                            teamId: form.querySelector('#student-team').value,
+                            totalPoints: 0,
+                            createdAt: Date.now()
+                        });
+                        if (messageEl) messageEl.textContent = 'Student added successfully!';
+                        form.reset();
+                        break;
+                    case 'add-program-form':
+                        await db.ref('programs').push({
+                             name: form.querySelector('#program-name').value,
+                             category: form.querySelector('#program-category').value,
+                             createdAt: Date.now()
+                        });
+                        if (messageEl) messageEl.textContent = 'Program added successfully!';
+                        form.reset();
+                        break;
+                    case 'update-points-form':
+                        const newConfig = {
+                            first: parseInt(form.querySelector('#points-first').value),
+                            second: parseInt(form.querySelector('#points-second').value),
+                            third: parseInt(form.querySelector('#points-third').value),
+                            a_grade: parseInt(form.querySelector('#points-a_grade').value),
+                            b_grade: parseInt(form.querySelector('#points-b_grade').value)
+                        };
+                        await db.ref('pointsConfig').set(newConfig);
+                        await recalculateAllPoints();
+                        if (messageEl) messageEl.textContent = 'Points updated and scores recalculated!';
+                        break;
+                    case 'add-result-form':
+                        const programId = form.querySelector('#res-program').value;
+                        if (!programId || tempParticipants.length === 0) {
+                            throw new Error("Program and at least one participant are required.");
+                        }
+                        const program = appData.programs[programId];
+                        
+                        const finalParticipants = tempParticipants.map((p, index) => {
+                            const position = document.getElementById(`pos-select-${index}`).value;
+                            const grade = document.getElementById(`grade-select-${index}`).value;
+                            return { ...p, position, grade };
+                        });
+
+                        await db.ref('results').push({
+                            programId,
+                            programName: program.name,
+                            category: program.category,
+                            participants: finalParticipants,
+                            timestamp: Date.now()
+                        });
+                        await recalculateAllPoints();
+                        if (messageEl) messageEl.textContent = 'Result added and scores updated!';
+                        tempParticipants = []; // Clear state before re-rendering
+                        break;
+                }
+
+                // SUCCESS: Re-render the active tab to show the new data in the list
+                if (activeTabName) {
+                    renderAdminTab(activeTabName);
+                }
+
+            } catch (error) {
+                console.error("Form submission error:", error);
+                if (messageEl) messageEl.textContent = `Error: ${error.message}`;
+            } finally {
+                // After rendering is done, set a timeout to clear the message
+                setTimeout(() => {
+                    const currentMessageEl = document.querySelector(`#${form.id} #form-message`);
+                    if(currentMessageEl) currentMessageEl.textContent = '';
+                }, 3000);
+            }
+        }
+        
+        async function handleAdminListClick(e) {
+            const deleteBtn = e.target.closest('.delete-btn');
+            if (deleteBtn) {
+                const { id, collection } = deleteBtn.dataset;
+                if (confirm(`Are you sure you want to delete this item from ${collection}? This action cannot be undone.`)) {
+                    try {
+                        await db.ref(`${collection}/${id}`).remove();
+                        if (collection === 'results' || collection === 'students') {
+                            await recalculateAllPoints();
+                        }
+                    } catch (error) {
+                        console.error("Deletion Error:", error);
+                        alert("Could not delete the item. " + error.message);
+                    }
+                }
+            }
+        }
+        
+        async function recalculateAllPoints() {
+            const studentPoints = {};
+            for (const studentId in appData.students) {
+                studentPoints[studentId] = 0;
+            }
+
+            const allResults = appData.results || {};
+            const pointsConf = appData.pointsConfig;
+            
+            for (const resultId in allResults) {
+                const result = allResults[resultId];
+                if (!result.participants) continue;
+
+                result.participants.forEach(p => {
+                    let currentPoints = 0;
+                    if(p.position && p.position !== 'none' && pointsConf[p.position]){
+                        currentPoints += pointsConf[p.position];
+                    }
+                    if(p.grade && p.grade !== 'none' && pointsConf[p.grade]){
+                        currentPoints += pointsConf[p.grade];
+                    }
+                    if(studentPoints.hasOwnProperty(p.studentId)){
+                       studentPoints[p.studentId] += currentPoints;
+                    }
+                });
+            }
+
+            const finalUpdates = {};
+            for (const studentId in studentPoints) {
+                finalUpdates[`/students/${studentId}/totalPoints`] = studentPoints[studentId];
+            }
+            
+            return db.ref().update(finalUpdates);
+        }
+
+        function addParticipantToTempList() {
+            const studentSelect = document.getElementById('res-student-select');
+            const studentId = studentSelect.value;
+            if(!studentId) return;
+
+            // Avoid adding duplicates
+            if (tempParticipants.some(p => p.studentId === studentId)) {
+                alert('This student is already in the list.');
+                return;
+            }
+
+            const student = appData.students[studentId];
+            tempParticipants.push({
+                studentId: studentId,
+                name: student.name,
+                position: 'none',
+                grade: 'none'
+            });
+            renderParticipantsList();
+        }
+
+        function removeParticipantFromTempList(index) {
+            tempParticipants.splice(index, 1);
+            renderParticipantsList();
+        }
+
+        function renderParticipantsList() {
+            const container = document.getElementById('participants-list');
+            if(!container) return;
+            container.innerHTML = tempParticipants.map((p, index) => `
+                <div class="p-3 bg-gray-100 rounded-lg space-y-2">
+                    <div class="flex justify-between items-center">
+                        <p class="font-semibold">${p.name}</p>
+                        <button type="button" class="remove-participant-btn text-red-500 hover:text-red-700" data-index="${index}"><i class="fas fa-times-circle"></i></button>
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="pos-select-${index}" class="w-1/2 p-1 text-sm border-gray-300 rounded-md">
+                            <option value="none">No Position</option>
+                            <option value="first">1st Place</option>
+                            <option value="second">2nd Place</option>
+                            <option value="third">3rd Place</option>
+                        </select>
+                        <select id="grade-select-${index}" class="w-1/2 p-1 text-sm border-gray-300 rounded-md">
+                            <option value="none">No Grade</option>
+                            <option value="a_grade">A Grade</option>
+                            <option value="b_grade">B Grade</option>
+                        </select>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+
+        async function renderNotFoundPage() {
+            return `<div class="text-center"><h1 class="text-4xl font-bold">404 - Not Found</h1><p class="mt-4">The page you are looking for does not exist.</p></div>`;
+        }
+
+        // --- EVENT LISTENERS ---
+        document.addEventListener('click', e => {
+            const logoutBtn = e.target.closest('#logout-btn');
+            if (logoutBtn) auth.signOut();
+
+            const mobileMenuBtn = e.target.closest('#mobile-menu-btn');
+            if (mobileMenuBtn) {
+                const mobileNavContainer = document.getElementById('mobile-nav-container');
+                mobileNavContainer.classList.toggle('open');
+                if(mobileNavContainer.classList.contains('open')){
+                    mobileNavContainer.innerHTML = `<div class="pt-2 pb-3 space-y-1">${generateNavLinks(true)}</div>`;
+                }
+            }
+            
+            if (e.target.closest('.nav-link') || e.target.closest('#logout-btn')) {
+                 document.getElementById('mobile-nav-container')?.classList.remove('open');
+            }
+        });
+        
+        document.addEventListener('submit', async e => {
+            if (e.target.id === 'login-form') {
+                e.preventDefault();
+                const email = e.target.email.value;
+                const password = e.target.password.value;
+                const errorEl = document.getElementById('login-error');
+                try {
+                    errorEl.textContent = '';
+                    await auth.signInWithEmailAndPassword(email, password);
+                    window.location.hash = '/admin';
+                } catch (error) {
+                    errorEl.textContent = error.message;
+                }
+            }
+        });
+
+        // --- AUTH & INIT ---
+        auth.onAuthStateChanged(user => {
+            const authStateChanged = !!currentUser !== !!user;
+            currentUser = user;
+            if (authStateChanged) {
+                isInitialLoad = true;
+                router();
+            }
+        });
+
+        window.addEventListener('hashchange', () => router());
+        window.addEventListener('DOMContentLoaded', syncData);
+
+    </script>
+</body>
+</html>
+
