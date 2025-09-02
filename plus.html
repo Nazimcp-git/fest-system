@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Poru 2K25 - Results Portal</title>
+    <title>Poru 2K25 - Result Portal</title>
     
     <!-- Tailwind CSS for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -63,6 +63,20 @@
     padding: 10px 20px;
   }
 }
+
+        /* Print Styles */
+        @media print {
+            body > *:not(#print-area) {
+                display: none !important;
+            }
+            #print-area {
+                display: block !important;
+            }
+            @page {
+                size: A4;
+                margin: 2cm;
+            }
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -71,6 +85,9 @@
     <div id="app" class="min-h-screen">
         <div class="flex items-center justify-center min-h-screen"><div class="loader"></div></div>
     </div>
+    
+    <!-- Hidden container for printing -->
+    <div id="print-area" class="hidden"></div>
 
     <!-- Firebase SDKs (Version 8.10.0) -->
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
@@ -135,7 +152,7 @@
                     </div>
                 </main>
                         <p style="text-align:center; color: gray; margin-bottom: 10px; font-size: 14px;">© Copyright Owned Nazim Cp</p>
-                       
+                
             </div>
         `;
 
@@ -334,7 +351,7 @@
         }
 
         async function renderResultsPage(searchTerm = '') {
-             const results = getDataAsArray('results').filter(r => r.isPublished).sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
+             const results = getDataAsArray('results').filter(r => r.status === 'published').sort((a,b) => (b.timestamp || 0) - (a.timestamp || 0));
              const filteredResults = results.filter(r => 
                 (r.programName || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                 (r.category || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -490,7 +507,7 @@
              if (!student) return `<p>Student not found.</p>`;
 
              const teamName = appData.teams[student.teamId]?.name || 'N/A';
-             const results = getDataAsArray('results').filter(r => r.isPublished);
+             const results = getDataAsArray('results').filter(r => r.status === 'published');
              const achievements = [];
 
              const prizeLabels = { first: '1st Place', second: '2nd Place', third: '3rd Place', a_grade: 'A Grade', b_grade: 'B Grade' };
@@ -557,6 +574,148 @@
             `;
         }
 
+        function getProvisionalScores() {
+            const studentPoints = {};
+            for (const studentId in appData.students) {
+                studentPoints[studentId] = 0;
+            }
+
+            const allResults = appData.results || {};
+            const pointsConf = appData.pointsConfig;
+            
+            for (const resultId in allResults) {
+                const result = allResults[resultId];
+                // Include 'published' AND 'ready' results
+                if ((result.status !== 'published' && result.status !== 'ready') || !result.participants) continue;
+
+                result.participants.forEach(p => {
+                    let currentPoints = 0;
+                    if (p.position && p.position !== 'none' && pointsConf[p.position]) {
+                        currentPoints += pointsConf[p.position];
+                    }
+                    if (p.grade && p.grade !== 'none' && pointsConf[p.grade]) {
+                        currentPoints += pointsConf[p.grade];
+                    }
+                    if (studentPoints.hasOwnProperty(p.studentId)) {
+                       studentPoints[p.studentId] += currentPoints;
+                    }
+                });
+            }
+            
+            // Now process this into teams and students arrays for rendering
+            const teamsArray = JSON.parse(JSON.stringify(getDataAsArray('teams')));
+            const studentsArray = JSON.parse(JSON.stringify(getDataAsArray('students')));
+
+            studentsArray.forEach(student => {
+                student.totalPoints = studentPoints[student.id] || 0;
+            });
+            
+            teamsArray.forEach(team => {
+                team.totalPoints = 0;
+                team.categoryPoints = {};
+                CATEGORIES.forEach(c => team.categoryPoints[c] = 0);
+            });
+
+            studentsArray.forEach(student => {
+                const team = teamsArray.find(t => t.id === student.teamId);
+                if (team) {
+                    const points = student.totalPoints || 0;
+                    team.totalPoints += points;
+                    if (student.category && team.categoryPoints.hasOwnProperty(student.category)) {
+                       team.categoryPoints[student.category] += points;
+                    }
+                }
+            });
+
+            teamsArray.sort((a,b) => b.totalPoints - a.totalPoints);
+            studentsArray.sort((a,b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+
+            return { teamsArray, studentsArray };
+        }
+
+        function renderScorePreviewPage() {
+            const { teamsArray, studentsArray } = getProvisionalScores();
+
+            return `
+                <div class="page space-y-12">
+                    <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 rounded-md" role="alert">
+                      <p class="font-bold">Score Preview Mode</p>
+                      <p>This page shows the projected scores including results that are 'Ready to Publish'. These are not the live public scores.</p>
+                    </div>
+                    <div>
+                        <h1 class="text-3xl font-bold text-gray-900 mb-6">Provisional Team Standings</h1>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            ${teamsArray.map((team, index) => {
+                                    const colors = ['text-yellow-400', 'text-gray-400', 'text-yellow-600', 'text-blue-400'];
+                                    const icons = ['fa-crown', 'fa-medal', 'fa-award', 'fa-star'];
+                                    return `
+                                    <div class="bg-white shadow-lg rounded-xl p-6">
+                                        <div class="flex items-center justify-between">
+                                            <h2 class="text-xl font-bold text-gray-800">${team.name}</h2>
+                                            ${index < 4 ? `<i class="fas ${icons[index]} text-2xl ${colors[index]}"></i>` : ''}
+                                        </div>
+                                        <p class="text-5xl font-extrabold text-indigo-600 mt-4">${team.totalPoints}</p>
+                                        <p class="text-gray-500 mt-1">Total Points</p>
+                                    </div>`;
+                                }).join('')
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-900 mb-6">Provisional Category-wise Scores</h2>
+                        <div class="bg-white shadow-lg rounded-xl overflow-x-auto">
+                           <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
+                                        ${CATEGORIES.map(c => `<th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">${c}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    ${teamsArray.map(team => `
+                                        <tr>
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${team.name}</td>
+                                            ${CATEGORIES.map(c => `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">${team.categoryPoints[c] || 0}</td>`).join('')}
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                           </table>
+                        </div>
+                    </div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-900 mb-6">Provisional Top Scorers</h2>
+                         <div class="bg-white shadow-lg rounded-xl overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full divide-y divide-gray-200">
+                                     <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rank</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white divide-y divide-gray-200">
+                                        ${studentsArray.slice(0, 100).map((student, index) => `
+                                            <tr class="hover:bg-gray-50">
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${index + 1}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600"><a href="#/student/${student.id}" class="hover:underline">${student.name}</a></td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${appData.teams[student.teamId]?.name || 'N/A'}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${student.category}</td>
+                                                <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">${student.totalPoints || 0}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+
         async function renderAdminPage() {
             if (!currentUser) return renderAdminLoginPage();
             return renderAdminDashboard();
@@ -589,6 +748,7 @@
                         <nav id="admin-tabs" class="-mb-px flex space-x-8 overflow-x-auto" aria-label="Tabs">
                             <button data-tab="results" class="admin-tab active whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Upload Results</button>
                             <button data-tab="publish" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Publish</button>
+                            <button data-tab="preview" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Score Preview</button>
                             <button data-tab="students" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Students</button>
                             <button data-tab="teams" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Teams</button>
                             <button data-tab="programs" class="admin-tab whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Programs</button>
@@ -657,7 +817,13 @@
                     const pointsConf = appData.pointsConfig;
                     content = `
                         <div class="bg-white p-6 rounded-xl shadow-lg">
-                             <h2 class="text-2xl font-bold mb-6">Manage Results Publication</h2>
+                             <div class="flex justify-between items-center mb-6">
+                                <h2 class="text-2xl font-bold">Manage Results Publication</h2>
+                                <div class="flex gap-2">
+                                    <button id="print-all-ready-btn" class="bg-gray-600 text-white px-4 py-2 text-sm font-semibold rounded-md hover:bg-gray-700"><i class="fas fa-print mr-2"></i>Print All Ready</button>
+                                    <button id="publish-all-ready-btn" class="bg-blue-600 text-white px-4 py-2 text-sm font-semibold rounded-md hover:bg-blue-700">Publish All Ready</button>
+                                </div>
+                             </div>
                              <div id="publish-list" class="space-y-6">
                              ${allResults.length === 0 ? `<p class="text-gray-500 text-center py-4">No results have been uploaded yet.</p>` :
                                 allResults.map(result => {
@@ -676,18 +842,31 @@
                                         teamPointsSummary[teamId].points += currentPoints;
                                     });
                                     const sortedSummary = Object.values(teamPointsSummary).sort((a,b) => b.points - a.points);
+                                    
+                                    let statusBadge, actionButtons;
 
-                                    const statusBadge = result.isPublished
-                                        ? `<span class="text-xs font-semibold text-white bg-green-500 px-2 py-1 rounded-full">Published</span>`
-                                        : `<span class="text-xs font-semibold text-white bg-gray-500 px-2 py-1 rounded-full">Pending</span>`;
-
-                                    const actionButton = result.isPublished
-                                        ? `<button class="unpublish-btn bg-yellow-500 text-white px-4 py-2 text-sm font-semibold rounded-md hover:bg-yellow-600" data-id="${result.id}">Unpublish</button>`
-                                        : `<button class="publish-btn bg-green-500 text-white px-4 py-2 text-sm font-semibold rounded-md hover:bg-green-600" data-id="${result.id}">Publish</button>`;
-
+                                    switch(result.status) {
+                                        case 'published':
+                                            statusBadge = `<span class="text-xs font-semibold text-white bg-green-500 px-2 py-1 rounded-full">Published</span>`;
+                                            actionButtons = `
+                                                <button class="unpublish-btn bg-yellow-500 text-white px-3 py-1 text-sm font-semibold rounded-md hover:bg-yellow-600" data-id="${result.id}">Unpublish</button>
+                                                <button class="print-btn bg-gray-500 text-white px-3 py-1 text-sm font-semibold rounded-md hover:bg-gray-600" data-id="${result.id}"><i class="fas fa-print"></i></button>
+                                            `;
+                                            break;
+                                        case 'ready':
+                                            statusBadge = `<span class="text-xs font-semibold text-white bg-blue-500 px-2 py-1 rounded-full">Ready to Publish</span>`;
+                                            actionButtons = `
+                                                <button class="unmark-ready-btn bg-gray-400 text-white px-3 py-1 text-sm font-semibold rounded-md hover:bg-gray-500" data-id="${result.id}">Unmark</button>
+                                                <button class="publish-btn bg-green-500 text-white px-3 py-1 text-sm font-semibold rounded-md hover:bg-green-600" data-id="${result.id}">Publish</button>
+                                            `;
+                                            break;
+                                        default: // pending
+                                            statusBadge = `<span class="text-xs font-semibold text-white bg-gray-500 px-2 py-1 rounded-full">Pending</span>`;
+                                            actionButtons = `<button class="mark-ready-btn bg-blue-500 text-white px-3 py-1 text-sm font-semibold rounded-md hover:bg-blue-600" data-id="${result.id}">Mark as Ready</button>`;
+                                    }
 
                                     return `
-                                    <div class="border rounded-lg p-4 ${result.isPublished ? 'bg-green-50' : 'bg-gray-50'}">
+                                    <div class="border rounded-lg p-4 ${result.status === 'published' ? 'bg-green-50' : (result.status === 'ready' ? 'bg-blue-50' : 'bg-gray-50')}">
                                         <div class="flex justify-between items-start mb-4">
                                             <div>
                                                 <div class="flex items-center gap-2 mb-1">
@@ -696,8 +875,8 @@
                                                 </div>
                                                 <p class="text-sm text-gray-500">${result.category}</p>
                                             </div>
-                                            <div class="flex gap-2">
-                                                 ${actionButton}
+                                            <div class="flex items-center gap-2">
+                                                 ${actionButtons}
                                                  <button class="delete-btn text-red-500 hover:text-red-700" data-id="${result.id}" data-collection="results"><i class="fas fa-trash"></i></button>
                                             </div>
                                         </div>
@@ -716,6 +895,9 @@
                              </div>
                         </div>
                     `;
+                    break;
+                case 'preview':
+                    content = renderScorePreviewPage();
                     break;
                 case 'students':
                     content = `
@@ -1044,7 +1226,7 @@
                             programName: program.name,
                             category: program.category,
                             participants: finalParticipants,
-                            isPublished: false,
+                            status: 'pending', // Replaces isPublished
                             timestamp: Date.now()
                         });
                         if (messageEl) messageEl.textContent = 'Result uploaded successfully for review!';
@@ -1100,6 +1282,16 @@
             const deleteBtn = e.target.closest('.delete-btn');
             const publishBtn = e.target.closest('.publish-btn');
             const unpublishBtn = e.target.closest('.unpublish-btn');
+            const markReadyBtn = e.target.closest('.mark-ready-btn');
+            const unmarkReadyBtn = e.target.closest('.unmark-ready-btn');
+            const publishAllBtn = e.target.closest('#publish-all-ready-btn');
+            const printBtn = e.target.closest('.print-btn');
+            const printAllReadyBtn = e.target.closest('#print-all-ready-btn');
+
+            const currentTab = document.querySelector('.admin-tab.active')?.dataset.tab;
+            const reRenderCurrentTab = () => {
+                if (currentTab) renderAdminTab(currentTab);
+            }
 
             if (deleteBtn) {
                 const { id, collection } = deleteBtn.dataset;
@@ -1107,39 +1299,61 @@
                     try {
                         const itemToDelete = appData[collection][id];
                         await db.ref(`${collection}/${id}`).remove();
-                        if ((collection === 'results' && itemToDelete && itemToDelete.isPublished) || collection === 'students') {
+                        if ((collection === 'results' && itemToDelete && itemToDelete.status === 'published') || collection === 'students') {
                             await recalculateAllPoints();
                         }
                     } catch (error) {
-                        console.error("Deletion Error:", error);
                         alert("Could not delete the item. " + error.message);
+                    } finally {
+                        reRenderCurrentTab();
                     }
                 }
+            }
+
+            if(printBtn) {
+                printResult(printBtn.dataset.id);
+            }
+            if(printAllReadyBtn) {
+                printReadyResults();
             }
 
             if (publishBtn) {
-                const resultId = publishBtn.dataset.id;
-                if (confirm(`Are you sure you want to publish this result? This will update all scores and make it visible to everyone.`)) {
-                    try {
-                        await db.ref(`results/${resultId}`).update({ isPublished: true });
-                        await recalculateAllPoints();
-                    } catch (error) {
-                         console.error("Publishing Error:", error);
-                        alert("Could not publish the result. " + error.message);
-                    }
-                }
+                try {
+                    await db.ref(`results/${publishBtn.dataset.id}`).update({ status: 'published' });
+                    await recalculateAllPoints();
+                } catch (error) { alert("Could not publish result: " + error.message); }
+                finally { reRenderCurrentTab(); }
             }
-
             if (unpublishBtn) {
-                const resultId = unpublishBtn.dataset.id;
-                if (confirm(`Are you sure you want to unpublish this result? This will retract it from public view and update all scores.`)) {
+                 try {
+                    await db.ref(`results/${unpublishBtn.dataset.id}`).update({ status: 'pending' });
+                    await recalculateAllPoints();
+                } catch (error) { alert("Could not unpublish result: " + error.message); }
+                finally { reRenderCurrentTab(); }
+            }
+            if(markReadyBtn) {
+                try { await db.ref(`results/${markReadyBtn.dataset.id}`).update({ status: 'ready' }); }
+                catch(e) { alert("Error: " + e.message); }
+                finally { reRenderCurrentTab(); }
+            }
+            if(unmarkReadyBtn) {
+                 try { await db.ref(`results/${unmarkReadyBtn.dataset.id}`).update({ status: 'pending' }); }
+                 catch(e) { alert("Error: " + e.message); }
+                 finally { reRenderCurrentTab(); }
+            }
+            if (publishAllBtn) {
+                if (confirm('Are you sure you want to publish all results marked as "Ready"?')) {
                     try {
-                        await db.ref(`results/${resultId}`).update({ isPublished: false });
-                        await recalculateAllPoints();
-                    } catch (error) {
-                         console.error("Unpublishing Error:", error);
-                        alert("Could not unpublish the result. " + error.message);
-                    }
+                        const updates = {};
+                        getDataAsArray('results').forEach(r => {
+                            if (r.status === 'ready') updates[`/results/${r.id}/status`] = 'published';
+                        });
+                        if (Object.keys(updates).length > 0) {
+                            await db.ref().update(updates);
+                            await recalculateAllPoints();
+                        }
+                    } catch (error) { alert("Could not publish all: " + error.message); }
+                    finally { reRenderCurrentTab(); }
                 }
             }
         }
@@ -1155,7 +1369,7 @@
             
             for (const resultId in allResults) {
                 const result = allResults[resultId];
-                if (!result.isPublished || !result.participants) continue;
+                if (result.status !== 'published' || !result.participants) continue;
 
                 result.participants.forEach(p => {
                     let currentPoints = 0;
@@ -1217,6 +1431,143 @@
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
             XLSX.writeFile(wb, filename);
+        }
+        
+        function printReadyResults() {
+            const readyResults = getDataAsArray('results').filter(r => r.status === 'ready').sort((a, b) => a.category.localeCompare(b.category) || a.programName.localeCompare(b.programName));
+
+            if (readyResults.length === 0) {
+                alert('There are no results marked as "Ready to Publish".');
+                return;
+            }
+
+            const prizeLabels = { first: '1st', second: '2nd', third: '3rd', a_grade: 'A', b_grade: 'B' };
+
+            const printHTML = `
+                <div style="font-family: Arial, sans-serif; width: 210mm; padding: 1.5cm; box-sizing: border-box;">
+                    <div style="text-align: center; border-bottom: 2px solid black; padding-bottom: 1rem; margin-bottom: 1rem;">
+                        <h1 style="font-size: 22pt; margin: 0;">Fest Results - Ready for Publication</h1>
+                        <p style="font-size: 12pt; margin: 0.5rem 0;">Generated on: ${new Date().toLocaleString()}</p>
+                    </div>
+                    ${readyResults.map(result => `
+                        <div style="margin-bottom: 2rem; page-break-inside: avoid;">
+                            <h3 style="font-size: 14pt; margin: 0 0 0.5rem 0; font-weight: bold;">${result.programName}</h3>
+                            <p style="font-size: 11pt; margin: 0 0 1rem 0; color: #333; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem;">Category: ${result.category}</p>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 10pt;">
+                                <thead>
+                                    <tr style="background-color: #eee; text-align: left;">
+                                        <th style="padding: 8px; border: 1px solid #ccc;">Chest No</th>
+                                        <th style="padding: 8px; border: 1px solid #ccc;">Name</th>
+                                        <th style="padding: 8px; border: 1px solid #ccc;">Team</th>
+                                        <th style="padding: 8px; border: 1px solid #ccc;">Position</th>
+                                        <th style="padding: 8px; border: 1px solid #ccc;">Grade</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                ${(result.participants || []).map(p => {
+                                    const student = appData.students[p.studentId];
+                                    const teamName = student && appData.teams[student.teamId] ? appData.teams[student.teamId].name : 'N/A';
+                                    let positionText = p.position && p.position !== 'none' ? prizeLabels[p.position] : '-';
+                                    let gradeText = p.grade && p.grade !== 'none' ? prizeLabels[p.grade] : '-';
+
+                                    return `
+                                    <tr style="border-bottom: 1px solid #eee;">
+                                        <td style="padding: 8px; border: 1px solid #ccc;">${student.chestNo}</td>
+                                        <td style="padding: 8px; border: 1px solid #ccc;">${p.name}</td>
+                                        <td style="padding: 8px; border: 1px solid #ccc;">${teamName}</td>
+                                        <td style="padding: 8px; border: 1px solid #ccc;">${positionText}</td>
+                                        <td style="padding: 8px; border: 1px solid #ccc;">${gradeText}</td>
+                                    </tr>`
+                                }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+
+            const printArea = document.getElementById('print-area');
+            printArea.innerHTML = printHTML;
+            window.print();
+            printArea.innerHTML = '';
+        }
+        
+        function printResult(resultId) {
+            const result = appData.results[resultId];
+            if (!result) return;
+            
+            const positionInfo = {
+                first: { label: '1st Place' },
+                second: { label: '2nd Place' },
+                third: { label: '3rd Place' }
+            };
+
+            const positions = { first: [], second: [], third: [] };
+            const grades = { a_grade: [], b_grade: [] };
+            (result.participants || []).forEach(p => {
+                if(p.position && positions[p.position]) positions[p.position].push(p);
+                if(p.grade && grades[p.grade] && (!p.position || p.position === 'none')) grades[p.grade].push(p);
+            });
+
+            const printHTML = `
+                <div style="font-family: sans-serif; width: 210mm; min-height: 297mm; padding: 2cm; box-sizing: border-box;">
+                    <div style="text-align: center; border-bottom: 2px solid black; padding-bottom: 1rem; margin-bottom: 2rem;">
+                        <h1 style="font-size: 24pt; margin: 0;">College Fest Results</h1>
+                        <h2 style="font-size: 18pt; margin: 0.5rem 0;">${new Date().getFullYear()}</h2>
+                    </div>
+                    <div style="text-align: center; margin-bottom: 2rem;">
+                        <h3 style="font-size: 16pt; margin: 0; font-weight: bold;">${result.programName}</h3>
+                        <p style="font-size: 14pt; margin: 0.5rem 0; color: #555;">Category: ${result.category}</p>
+                    </div>
+                    <div style="font-size: 12pt;">
+                    ${Object.entries(positions).map(([pos, participants]) => participants.length > 0 ? `
+                        <div style="margin-bottom: 1.5rem;">
+                             <h4 style="font-size: 14pt; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem; margin-bottom: 1rem;">${positionInfo[pos].label}</h4>
+                             <table style="width: 100%; border-collapse: collapse;">
+                                ${participants.map(p => {
+                                    const student = appData.students[p.studentId];
+                                    const teamName = student && appData.teams[student.teamId] ? appData.teams[student.teamId].name : 'N/A';
+                                    const grade = p.grade && p.grade !== 'none' ? p.grade.replace('_', ' ').toUpperCase() : '';
+                                    return `
+                                    <tr style="border-bottom: 1px solid #eee;">
+                                        <td style="padding: 0.5rem;">${student.chestNo}</td>
+                                        <td style="padding: 0.5rem; font-weight: bold;">${p.name}</td>
+                                        <td style="padding: 0.5rem;">${teamName}</td>
+                                        <td style="padding: 0.5rem; text-align: right; font-weight: bold;">${grade}</td>
+                                    </tr>`
+                                }).join('')}
+                             </table>
+                        </div>
+                    `: '').join('')}
+                    ${(grades.a_grade.length > 0 || grades.b_grade.length > 0) ? `
+                        <div style="margin-bottom: 1.5rem;">
+                             <h4 style="font-size: 14pt; border-bottom: 1px solid #ccc; padding-bottom: 0.5rem; margin-bottom: 1rem;">Grade Winners</h4>
+                             <table style="width: 100%; border-collapse: collapse;">
+                                ${[...grades.a_grade, ...grades.b_grade].map(p => {
+                                     const student = appData.students[p.studentId];
+                                     const teamName = student && appData.teams[student.teamId] ? appData.teams[student.teamId].name : 'N/A';
+                                     const grade = p.grade.replace('_', ' ').toUpperCase();
+                                     return `
+                                     <tr style="border-bottom: 1px solid #eee;">
+                                         <td style="padding: 0.5rem;">${student.chestNo}</td>
+                                         <td style="padding: 0.5rem; font-weight: bold;">${p.name}</td>
+                                         <td style="padding: 0.5rem;">${teamName}</td>
+                                         <td style="padding: 0.5rem; text-align: right; font-weight: bold;">${grade}</td>
+                                     </tr>`
+                                 }).join('')}
+                             </table>
+                        </div>
+                    `: ''}
+                    </div>
+                    <div style="position: absolute; bottom: 2cm; right: 2cm; font-size: 10pt;">
+                        <p>Date: ${new Date().toLocaleDateString()}</p>
+                    </div>
+                </div>
+            `;
+            const printArea = document.getElementById('print-area');
+            printArea.innerHTML = printHTML;
+            window.print();
+            printArea.innerHTML = '';
         }
 
         function renderParticipantsList() {
