@@ -52,6 +52,14 @@
         #mobile-nav-container.open {
             max-height: 500px; /* Adjust as needed */
         }
+        .remoss{
+            padding: 30px 50px;
+        }
+        @media only screen and (max-width: 600px) {
+  .remoss {
+    padding: 10px 20px;
+  }
+}
     </style>
 </head>
 <body class="antialiased text-gray-800">
@@ -118,7 +126,8 @@
                         <!-- Mobile nav content is injected here -->
                     </div>
                 </nav>
-                <main id="main-content" class="py-10 flex-grow" style="padding: 30px 50px;">
+                
+                <main id="main-content" class="py-10 flex-grow remoss">
                     <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 px-6">
                         ${content}
                     </div>
