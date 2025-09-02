@@ -16,6 +16,9 @@
     <!-- Font Awesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- SheetJS for Excel file parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
     <style>
         /* Custom styles and animations */
         body {
@@ -79,7 +82,7 @@
         // --- FIREBASE CONFIGURATION ---
         // IMPORTANT: Replace with your actual Firebase project configuration
         const firebaseConfig = {
-           apiKey: "AIzaSyBXJ_RnfjUDi7qPDATWVnS5lSFw6jVRYgo",
+            apiKey: "AIzaSyBXJ_RnfjUDi7qPDATWVnS5lSFw6jVRYgo",
   authDomain: "shopping-e284c.firebaseapp.com",
   databaseURL: "https://shopping-e284c-default-rtdb.firebaseio.com",
   projectId: "shopping-e284c",
@@ -90,7 +93,7 @@
         };
 
         // --- CONSTANTS ---
-        const CATEGORIES = ["Bidaya", "Uoola", "Thaniya", "Thanawiyya", "Aliya", "Kulliyya"];
+        const CATEGORIES = ["BIDAYA", "UOOLA", "THANIYA", "THANAWAIYYA", "ALIYA", "KULLIYYA"];
 
         // --- INITIALIZE FIREBASE ---
         firebase.initializeApp(firebaseConfig);
@@ -132,7 +135,7 @@
                     </div>
                 </main>
                         <p style="text-align:center; color: gray; margin-bottom: 10px; font-size: 14px;">© Copyright Owned Nazim Cp</p>
-                
+                       
             </div>
         `;
 
@@ -142,6 +145,7 @@
                 <a href="#/" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Home</a>
                 <a href="#/results" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Results</a>
                 <a href="#/leaderboard" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Leaderboard</a>
+                <a href="#/search" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Search</a>
             `;
             const authLinks = currentUser ? 
                 `<a href="#/admin" class="nav-link text-gray-600 hover:bg-indigo-600 hover:text-white ${baseClasses}">Admin</a>
@@ -214,6 +218,7 @@
                     '/': renderHomePage,
                     '/results': renderResultsPage,
                     '/leaderboard': renderLeaderboardPage,
+                    '/search': renderSearchPage,
                     '/admin': renderAdminPage,
                 };
                 pageFunction = routes[path] || renderNotFoundPage;
@@ -232,10 +237,15 @@
                 adminContent?.addEventListener('submit', handleAdminFormSubmit);
                 adminContent?.addEventListener('change', handleAdminFormChange);
                 adminContent?.addEventListener('click', handleAdminListClick);
-                adminContent?.addEventListener('click', e => { // Listener for new admin results form
+                adminContent?.addEventListener('click', e => {
                     if (e.target.id === 'add-participant-btn') addParticipantToTempList();
                     if (e.target.matches('.remove-participant-btn')) removeParticipantFromTempList(e.target.dataset.index);
+                    if (e.target.id === 'download-student-template') downloadTemplate('student');
+                    if (e.target.id === 'download-program-template') downloadTemplate('program');
                 });
+            }
+             if (path === '/search') {
+                document.getElementById('profile-search-form')?.addEventListener('submit', handleProfileSearch);
             }
             if (path === '/results'){
                 document.getElementById('results-search-form')?.addEventListener('submit', e => {
@@ -410,6 +420,23 @@
                 </div>
             `;
         }
+        
+        async function renderSearchPage() {
+            return `
+                <div class="page max-w-lg mx-auto">
+                    <div class="bg-white shadow-lg rounded-xl p-8">
+                        <h1 class="text-3xl font-bold text-gray-900 mb-2">Find Participant</h1>
+                        <p class="text-gray-600 mb-6">Enter a participant's Chest Number to see their profile and results.</p>
+                        <form id="profile-search-form" class="flex gap-2">
+                             <input id="chest-no-input" type="text" placeholder="Enter Chest No..." required
+                                class="flex-grow p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                            <button type="submit" class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Search</button>
+                        </form>
+                        <p id="search-error" class="text-red-500 text-sm mt-4 text-center"></p>
+                    </div>
+                </div>
+            `;
+        }
 
         async function renderLeaderboardPage(activeCategory = 'All') {
             const studentsArray = getDataAsArray('students');
@@ -501,6 +528,7 @@
                         </div>
                         <div class="text-center sm:text-left">
                             <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">${student.name}</h1>
+                             <p class="text-md text-gray-500">Chest No: ${student.chestNo || 'N/A'}</p>
                             <p class="text-lg sm:text-xl text-gray-600">${teamName} Team • ${student.category}</p>
                         </div>
                         <div class="sm:ml-auto text-center sm:text-right pt-4 sm:pt-0">
@@ -692,17 +720,39 @@
                 case 'students':
                     content = `
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg">
-                                <h2 class="text-2xl font-bold mb-6">Add New Student</h2>
-                                <form id="add-student-form" class="space-y-4">
-                                    <div><label for="student-name" class="block text-sm font-medium">Student Name</label><input type="text" id="student-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                                    <div><label for="student-category" class="block text-sm font-medium">Category</label><select id="student-category" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">${categoryOptions()}</select></div>
-                                    <div><label for="student-team" class="block text-sm font-medium">Team</label><select id="student-team" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"><option value="">Select Team</option>${teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select></div>
-                                    <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Student</button>
-                                    <p id="form-message" class="text-sm mt-2 text-center"></p>
-                                </form>
+                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg order-2 lg:order-1">
+                                <h2 class="text-2xl font-bold mb-6">All Students</h2>
+                                <div id="items-list" class="space-y-2 max-h-[80vh] overflow-y-auto pr-2"></div>
                             </div>
-                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg"><h2 class="text-2xl font-bold mb-6">All Students</h2><div id="items-list" class="space-y-2 max-h-[80vh] overflow-y-auto pr-2"></div></div>
+                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg order-1 lg:order-2 space-y-8">
+                                <div>
+                                    <h2 class="text-2xl font-bold mb-6">Add New Student</h2>
+                                    <form id="add-student-form" class="space-y-4">
+                                        <div><label for="student-chest-no" class="block text-sm font-medium">Chest No.</label><input type="text" id="student-chest-no" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
+                                        <div><label for="student-name" class="block text-sm font-medium">Student Name</label><input type="text" id="student-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
+                                        <div><label for="student-category" class="block text-sm font-medium">Category</label><select id="student-category" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">${categoryOptions()}</select></div>
+                                        <div><label for="student-team" class="block text-sm font-medium">Team</label><select id="student-team" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"><option value="">Select Team</option>${teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('')}</select></div>
+                                        <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Student</button>
+                                        <p id="form-message" class="text-sm mt-2 text-center"></p>
+                                    </form>
+                                </div>
+                                <hr/>
+                                <div>
+                                    <h2 class="text-2xl font-bold mb-6">Bulk Upload Students</h2>
+                                    <form id="bulk-upload-students-form" class="space-y-4">
+                                        <div class="text-sm">
+                                            <p class="mb-2">Upload an Excel (.xlsx) file with columns:</p>
+                                            <code class="text-xs bg-gray-200 p-1 rounded">ChestNo, Name, Category, TeamName</code>
+                                        </div>
+                                        <div>
+                                            <input type="file" id="student-file-input" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" accept=".xlsx" required>
+                                        </div>
+                                        <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">Upload File</button>
+                                        <button type="button" id="download-student-template" class="w-full text-center py-2 px-4 border text-sm font-medium rounded-md text-indigo-600 bg-indigo-50 hover:bg-indigo-100">Download Template</button>
+                                        <p id="bulk-form-message" class="text-sm mt-2 text-center"></p>
+                                    </form>
+                                </div>
+                            </div>
                         </div>`;
                     break;
                  case 'teams':
@@ -722,16 +772,37 @@
                 case 'programs':
                      content = `
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg">
-                                <h2 class="text-2xl font-bold mb-6">Add New Program</h2>
-                                <form id="add-program-form" class="space-y-4">
-                                    <div><label for="program-name" class="block text-sm font-medium">Program Name</label><input type="text" id="program-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
-                                    <div><label for="program-category" class="block text-sm font-medium">Category</label><select id="program-category" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">${categoryOptions()}</select></div>
-                                    <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Program</button>
-                                    <p id="form-message" class="text-sm mt-2 text-center"></p>
-                                </form>
+                             <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg order-2 lg:order-1">
+                                <h2 class="text-2xl font-bold mb-6">All Programs</h2>
+                                <div id="items-list" class="space-y-2 max-h-[80vh] overflow-y-auto pr-2"></div>
                             </div>
-                            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-lg"><h2 class="text-2xl font-bold mb-6">All Programs</h2><div id="items-list" class="space-y-2 max-h-[80vh] overflow-y-auto pr-2"></div></div>
+                            <div class="lg:col-span-1 bg-white p-6 rounded-xl shadow-lg order-1 lg:order-2 space-y-8">
+                               <div>
+                                    <h2 class="text-2xl font-bold mb-6">Add New Program</h2>
+                                    <form id="add-program-form" class="space-y-4">
+                                        <div><label for="program-name" class="block text-sm font-medium">Program Name</label><input type="text" id="program-name" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm"></div>
+                                        <div><label for="program-category" class="block text-sm font-medium">Category</label><select id="program-category" required class="mt-1 block w-full p-2 border-gray-300 rounded-md shadow-sm">${categoryOptions()}</select></div>
+                                        <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Add Program</button>
+                                        <p id="form-message" class="text-sm mt-2 text-center"></p>
+                                    </form>
+                               </div>
+                               <hr/>
+                               <div>
+                                    <h2 class="text-2xl font-bold mb-6">Bulk Upload Programs</h2>
+                                    <form id="bulk-upload-programs-form" class="space-y-4">
+                                        <div class="text-sm">
+                                            <p class="mb-2">Upload an Excel (.xlsx) file with columns:</p>
+                                            <code class="text-xs bg-gray-200 p-1 rounded">ProgramName, Category</code>
+                                        </div>
+                                        <div>
+                                            <input type="file" id="program-file-input" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100" accept=".xlsx" required>
+                                        </div>
+                                        <button type="submit" class="w-full justify-center py-2 px-4 border shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700">Upload File</button>
+                                        <button type="button" id="download-program-template" class="w-full text-center py-2 px-4 border text-sm font-medium rounded-md text-indigo-600 bg-indigo-50 hover:bg-indigo-100">Download Template</button>
+                                        <p id="bulk-form-message" class="text-sm mt-2 text-center"></p>
+                                    </form>
+                               </div>
+                            </div>
                         </div>`;
                     break;
                  case 'points':
@@ -783,7 +854,7 @@
         function loadItemsList(collectionName) {
             const container = document.getElementById('items-list');
             if(!container) return;
-            const items = getDataAsArray(collectionName);
+            const items = getDataAsArray(collectionName).sort((a, b) => (a.name > b.name) ? 1 : -1);
             if(items.length === 0) {
                  container.innerHTML = `<p class="text-gray-500 text-center py-4">No ${collectionName} have been added yet.</p>`;
                  return;
@@ -792,7 +863,11 @@
                 <div class="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
                     <div>
                         <p class="font-medium text-gray-800">${item.name}</p>
-                        ${item.category ? `<p class="text-sm text-gray-500">${item.category} ${item.teamId ? `• ${appData.teams[item.teamId]?.name}` : ''}</p>` : ''}
+                        <p class="text-sm text-gray-500">
+                            ${collectionName === 'students' ? `Chest No: ${item.chestNo} • ` : ''}
+                            ${item.category || ''}
+                            ${item.teamId ? `• ${appData.teams[item.teamId]?.name}` : ''}
+                        </p>
                     </div>
                     <button class="delete-btn text-red-500 hover:text-red-700" data-id="${item.id}" data-collection="${collectionName}"><i class="fas fa-trash"></i></button>
                 </div>
@@ -821,7 +896,7 @@
                 // Populate students
                 if (category && programSelect.value) {
                     const filteredStudents = getDataAsArray('students').filter(s => s.category === category);
-                    studentSelect.innerHTML = `<option value="">Select Student</option>` + filteredStudents.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+                    studentSelect.innerHTML = `<option value="">Select Student</option>` + filteredStudents.map(s => `<option value="${s.id}">${s.name} (${s.chestNo})</option>`).join('');
                     studentSelect.disabled = false;
                     addBtn.disabled = false;
                 } else {
@@ -831,11 +906,76 @@
                 }
             }
         }
+
+        function processBulkUpload(file, type, messageEl) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+                        if (type === 'student') {
+                            const allStudents = getDataAsArray('students');
+                            const allTeams = getDataAsArray('teams');
+                            const teamMap = allTeams.reduce((map, team) => {
+                                map[team.name.toLowerCase().trim()] = team.id;
+                                return map;
+                            }, {});
+
+                            const newStudents = {};
+                            let skippedCount = 0;
+                            
+                            jsonData.forEach(row => {
+                                const chestNo = String(row.ChestNo || '').trim();
+                                const name = String(row.Name || '').trim();
+                                const category = String(row.Category || '').trim();
+                                const teamName = String(row.TeamName || '').trim();
+                                const teamId = teamMap[teamName.toLowerCase()];
+                                
+                                if (chestNo && name && category && teamId && CATEGORIES.includes(category) && !allStudents.some(s => s.chestNo === chestNo)) {
+                                    const key = db.ref('students').push().key;
+                                    newStudents[key] = { chestNo, name, category, teamId, totalPoints: 0, createdAt: Date.now() };
+                                } else {
+                                    skippedCount++;
+                                }
+                            });
+
+                            if (Object.keys(newStudents).length > 0) await db.ref('students').update(newStudents);
+                            messageEl.textContent = `Added ${Object.keys(newStudents).length} students. Skipped ${skippedCount} invalid/duplicate rows.`;
+                        } else { // program
+                             const newPrograms = {};
+                             let skippedPrograms = 0;
+                             jsonData.forEach(row => {
+                                 const name = String(row.ProgramName || '').trim();
+                                 const category = String(row.Category || '').trim();
+                                 if(name && category && CATEGORIES.includes(category)) {
+                                     const key = db.ref('programs').push().key;
+                                     newPrograms[key] = { name, category, createdAt: Date.now() };
+                                 } else {
+                                     skippedPrograms++;
+                                 }
+                             });
+                             if (Object.keys(newPrograms).length > 0) await db.ref('programs').update(newPrograms);
+                             messageEl.textContent = `Added ${Object.keys(newPrograms).length} programs. Skipped ${skippedPrograms} invalid rows.`;
+                        }
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                reader.onerror = () => reject(new Error('Error reading the file.'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
         
         async function handleAdminFormSubmit(e) {
             e.preventDefault();
             const form = e.target;
-            const messageEl = form.querySelector('#form-message');
+            const messageEl = form.querySelector('#form-message') || form.querySelector('#bulk-form-message');
             if (messageEl) messageEl.textContent = '';
             
             const activeTabEl = document.querySelector('.admin-tab.active');
@@ -845,11 +985,17 @@
                 switch(form.id) {
                     case 'add-team-form':
                         await db.ref('teams').push({ name: form.querySelector('#team-name').value, createdAt: Date.now() });
-                            if (messageEl) messageEl.textContent = 'Team added successfully!';
+                        if (messageEl) messageEl.textContent = 'Team added successfully!';
                         form.reset();
                         break;
                     case 'add-student-form':
+                        const chestNo = form.querySelector('#student-chest-no').value;
+                        const existingStudent = Object.values(appData.students || {}).find(s => s.chestNo === chestNo);
+                        if (existingStudent) {
+                            throw new Error(`Chest No. ${chestNo} is already assigned to ${existingStudent.name}.`);
+                        }
                         await db.ref('students').push({
+                            chestNo: chestNo,
                             name: form.querySelector('#student-name').value,
                             category: form.querySelector('#student-category').value,
                             teamId: form.querySelector('#student-team').value,
@@ -898,16 +1044,24 @@
                             programName: program.name,
                             category: program.category,
                             participants: finalParticipants,
-                            isPublished: false, // <<<<<<<< KEY CHANGE HERE
+                            isPublished: false,
                             timestamp: Date.now()
                         });
-                        // DO NOT recalculate points on upload, only on publish
                         if (messageEl) messageEl.textContent = 'Result uploaded successfully for review!';
-                        tempParticipants = []; // Clear state before re-rendering
+                        tempParticipants = [];
+                        break;
+                    case 'bulk-upload-students-form':
+                    case 'bulk-upload-programs-form':
+                        const type = form.id === 'bulk-upload-students-form' ? 'student' : 'program';
+                        const fileInput = form.querySelector('input[type="file"]');
+                        const file = fileInput.files[0];
+                        if (!file) throw new Error("Please select a file.");
+                        messageEl.textContent = 'Processing file...';
+                        await processBulkUpload(file, type, messageEl);
+                        form.reset();
                         break;
                 }
 
-                // SUCCESS: Re-render the active tab to show the new data in the list
                 if (activeTabName) {
                     renderAdminTab(activeTabName);
                 }
@@ -916,30 +1070,45 @@
                 console.error("Form submission error:", error);
                 if (messageEl) messageEl.textContent = `Error: ${error.message}`;
             } finally {
-                // After rendering is done, set a timeout to clear the message
                 setTimeout(() => {
-                    const currentMessageEl = document.querySelector(`#${form.id} #form-message`);
-                    if(currentMessageEl) currentMessageEl.textContent = '';
+                    const currentMessageEl = document.querySelector(`#${form.id} #form-message, #${form.id} #bulk-form-message`);
+                    if(currentMessageEl && !currentMessageEl.textContent.includes('Added')) currentMessageEl.textContent = '';
                 }, 3000);
+            }
+        }
+        
+         async function handleProfileSearch(e) {
+            e.preventDefault();
+            const chestNoInput = document.getElementById('chest-no-input');
+            const errorEl = document.getElementById('search-error');
+            const chestNo = chestNoInput.value.trim();
+            errorEl.textContent = '';
+
+            if (!chestNo) return;
+
+            const students = getDataAsArray('students');
+            const foundStudent = students.find(s => s.chestNo === chestNo);
+
+            if (foundStudent) {
+                window.location.hash = `/student/${foundStudent.id}`;
+            } else {
+                errorEl.textContent = `No student found with Chest No. "${chestNo}".`;
             }
         }
         
         async function handleAdminListClick(e) {
             const deleteBtn = e.target.closest('.delete-btn');
             const publishBtn = e.target.closest('.publish-btn');
-            const unpublishBtn = e.target.closest('.unpublish-btn'); // New
+            const unpublishBtn = e.target.closest('.unpublish-btn');
 
             if (deleteBtn) {
                 const { id, collection } = deleteBtn.dataset;
                 if (confirm(`Are you sure you want to delete this item from ${collection}? This action cannot be undone.`)) {
                     try {
-                        const resultToDelete = appData.results[id];
+                        const itemToDelete = appData[collection][id];
                         await db.ref(`${collection}/${id}`).remove();
-                        // Only recalculate if a PUBLISHED result is deleted
-                        if (collection === 'results' && resultToDelete && resultToDelete.isPublished) {
+                        if ((collection === 'results' && itemToDelete && itemToDelete.isPublished) || collection === 'students') {
                             await recalculateAllPoints();
-                        } else if (collection === 'students') {
-                             await recalculateAllPoints();
                         }
                     } catch (error) {
                         console.error("Deletion Error:", error);
@@ -961,7 +1130,7 @@
                 }
             }
 
-            if (unpublishBtn) { // New block
+            if (unpublishBtn) {
                 const resultId = unpublishBtn.dataset.id;
                 if (confirm(`Are you sure you want to unpublish this result? This will retract it from public view and update all scores.`)) {
                     try {
@@ -986,7 +1155,6 @@
             
             for (const resultId in allResults) {
                 const result = allResults[resultId];
-                // Only count points from PUBLISHED results
                 if (!result.isPublished || !result.participants) continue;
 
                 result.participants.forEach(p => {
@@ -1016,7 +1184,6 @@
             const studentId = studentSelect.value;
             if(!studentId) return;
 
-            // Avoid adding duplicates
             if (tempParticipants.some(p => p.studentId === studentId)) {
                 alert('This student is already in the list.');
                 return;
@@ -1035,6 +1202,21 @@
         function removeParticipantFromTempList(index) {
             tempParticipants.splice(index, 1);
             renderParticipantsList();
+        }
+
+        function downloadTemplate(type) {
+            let data, filename;
+            if (type === 'student') {
+                data = [{ ChestNo: '101', Name: 'Amal', Category: 'Bidaya', TeamName: 'Team A' }];
+                filename = 'student_template.xlsx';
+            } else { // program
+                data = [{ ProgramName: 'Solo Song', Category: 'Bidaya' }];
+                filename = 'program_template.xlsx';
+            }
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+            XLSX.writeFile(wb, filename);
         }
 
         function renderParticipantsList() {
